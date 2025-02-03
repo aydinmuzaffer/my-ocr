@@ -86,6 +86,38 @@ def display(result, json_output, img):
 
     st.write(f"Successful! Passed Time: {elapsed_time:.2f} seconds")
 
+    # --------- SUPER OCR Section ---------
+    st.write(f"## 🔥 Super OCR 🔥")
+    
+    # Define unwanted words
+    unwanted_words = {
+        "Gelir", "idare", "idaresi", "VERGI", "LEVHASI", "Bagkanlign", "MUKELLEFIN",
+        "ADI", "SOYADI", "DAIRESI", "NO", "TC", "KIMLIK", "TICARET", "ONVANI"
+    }
+
+    def clean_text(text):
+        """Removes unwanted words and trims whitespace."""
+        return " ".join([word for word in text.split() if word.upper() not in unwanted_words]).strip()
+
+    def extract_lines(indices):
+        """Extracts and cleans text from given line indices."""
+        return clean_text(" ".join(" ".join(per_line_words[i]) for i in indices if i < len(per_line_words)))
+
+    # Extract values based on discovered positions
+    vergi_dairesi = extract_lines([5, 6, 7])  # Lines 6,7,8
+    vergi_kimlik_no = extract_lines([11, 12, 1134])  # Lines 12,13,14
+
+    # Handle Ticari Ünvan carefully to avoid unwanted concatenation
+    ticari_unvan_lines = [per_line_words[i] for i in [9, 10, 11] if i < len(per_line_words)]
+    ticari_unvan_filtered = [" ".join(line) for line in ticari_unvan_lines if any(word.upper() not in unwanted_words for word in line)]
+    ticari_unvan = " ".join(ticari_unvan_filtered).strip()
+
+    st.write(f"### 📌 Ticari Ünvan: {ticari_unvan or 'Not Found'}")
+    st.write(f"### 📌 Vergi Kimlik No: {vergi_kimlik_no or 'Not Found'}")
+    st.write(f"### 📌 Vergi Dairesi: {vergi_dairesi or 'Not Found'}")
+
+    putMarkdown()
+
 
 def main():
     global start_time, seconds_elapsed, stop_time
