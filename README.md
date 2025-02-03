@@ -1,9 +1,6 @@
 
 # DocTR OCR with Streamlit
 
-## MEDIUM 
-https://medium.com/@alperenclk/exploring-optical-character-recognition-ocr-with-streamlit-and-doctr-00e95ae36e4e
-
 ## Usage
 
 ```Bash
