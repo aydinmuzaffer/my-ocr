@@ -86,31 +86,44 @@ def display(result, json_output, img):
 
     st.write(f"Successful! Passed Time: {elapsed_time:.2f} seconds")
 
+    # Stop processing at "TC KIMLIK NO"
+    stop_index = next((i for i, line in enumerate(per_line_words) if "TC KIMLIK NO" in " ".join(line)), None)
+    if stop_index is not None:
+        per_line_words = per_line_words[:stop_index]
+
+    # Remove the first seven common headers (1-based index means remove 0-6 in 0-based)
+    # per_line_words = per_line_words[7:] if len(per_line_words) > 7 else per_line_words
+
     # --------- SUPER OCR Section ---------
     st.write(f"## 🔥 Super OCR 🔥")
-    
-    # Define unwanted words
-    unwanted_words = {
-        "Gelir", "idare", "idaresi", "VERGI", "LEVHASI", "Bagkanlign", "MUKELLEFIN",
-        "ADI", "SOYADI", "DAIRESI", "NO", "TC", "KIMLIK", "TICARET", "ONVANI"
-    }
 
     def clean_text(text):
-        """Removes unwanted words and trims whitespace."""
-        return " ".join([word for word in text.split() if word.upper() not in unwanted_words]).strip()
+        """Removes common unwanted words from extracted text."""
+        unwanted_words = {"Gelir idaresi", "VERGI LEVHASI", "Bagkanlign", "MUKELLEFIN",
+                          "VERGI", "ADI SOYADI", "DAIRESI", "NO", "TC KIMLIK NO", "TICARET ONVANI", "VERGI KIMLIK", "ADI SOYADI"}
+        return " ".join(word for word in text.split() if word not in unwanted_words).strip()
 
     def extract_lines(indices):
-        """Extracts and cleans text from given line indices."""
+        """Extracts and cleans text from given line indices, adjusted for 0-based indexing."""
         return clean_text(" ".join(" ".join(per_line_words[i]) for i in indices if i < len(per_line_words)))
 
-    # Extract values based on discovered positions
-    vergi_dairesi = extract_lines([5, 6, 7])  # Lines 6,7,8
-    vergi_kimlik_no = extract_lines([11, 12, 1134])  # Lines 12,13,14
+    # **Corrected Indexes (Decreased by 1 to match 0-based index)**
+    vergi_dairesi = extract_lines([5, 6, 7])  # Corrected from [6, 7, 8]
+    ticari_unvan = extract_lines([8, 9, 10])  # Corrected from [9, 10, 11]
+    vergi_kimlik_no = extract_lines([11, 12, 13])  # Corrected from [12, 13, 14]
 
-    # Handle Ticari Ünvan carefully to avoid unwanted concatenation
-    ticari_unvan_lines = [per_line_words[i] for i in [9, 10, 11] if i < len(per_line_words)]
-    ticari_unvan_filtered = [" ".join(line) for line in ticari_unvan_lines if any(word.upper() not in unwanted_words for word in line)]
+    # Ensure Ticari Ünvan isn't polluted with unwanted words
+    ticari_unvan_filtered = [" ".join(line) for i, line in enumerate(per_line_words) if 8 <= i <= 10 and any(
+        word.upper() not in {"VERGI", "NO", "KIMLIK"} for word in line)]
     ticari_unvan = " ".join(ticari_unvan_filtered).strip()
+
+    # Remove non-numeric characters from Vergi Kimlik No and validate
+    def extract_valid_number(text):
+        import re
+        cleaned = re.sub(r'\D', '', text)  # Remove all non-numeric characters
+        return cleaned if cleaned.isdigit() else ""
+
+    vergi_kimlik_no = extract_valid_number(vergi_kimlik_no)
 
     st.write(f"### 📌 Ticari Ünvan: {ticari_unvan or 'Not Found'}")
     st.write(f"### 📌 Vergi Kimlik No: {vergi_kimlik_no or 'Not Found'}")
