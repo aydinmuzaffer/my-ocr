@@ -41,20 +41,20 @@ def display(result, json_output, img):
     st.write("#### Downoad Json output")
     st.write("*⬇*" * 9)
 
-    # Button of Download JSON
-    download_button_str = get_download_button(json_output, "DOWNLOAD", "data.json")
-    st.markdown(download_button_str, unsafe_allow_html=True)
-    putMarkdown()
+    # # Button of Download JSON
+    # download_button_str = get_download_button(json_output, "DOWNLOAD", "data.json")
+    # st.markdown(download_button_str, unsafe_allow_html=True)
+    # putMarkdown()
 
-    # Show the result image
-    st.image(img, caption="Original image")
-    putMarkdown()
+    # # Show the result image
+    # st.image(img, caption="Original image")
+    # putMarkdown()
 
-    synthetic_pages = result.synthesize()
-    st.image(synthetic_pages, caption="Result of image")
+    # synthetic_pages = result.synthesize()
+    # st.image(synthetic_pages, caption="Result of image")
 
-    elapsed_time = time.time() - start_time
-    putMarkdown()
+    # elapsed_time = time.time() - start_time
+    # putMarkdown()
 
     # Show the results
     whole_words = []
@@ -68,68 +68,82 @@ def display(result, json_output, img):
             per_line_words.append(line_words)
 
     # Put the whole Words
-    st.write(f"## Whole Words:")
-    st.write(word + " " for word in whole_words)
-    putMarkdown()
+    # st.write(f"## Whole Words:")
+    # st.write(word + " " for word in whole_words)
+    # putMarkdown()
 
     # Put the Words line by line
-    st.write(f"## Line by Line:")
-    for lineWords in per_line_words:
-        st.write(word + " " for word in lineWords)
-    putMarkdown()
+    # st.write(f"## Line by Line:")
+    # for lineWords in per_line_words:
+    #     st.write(word + " " for word in lineWords)
+    # putMarkdown()
 
     # Put the Words Word by Word
-    st.write(f"## Word by Word:")
-    for index, item in enumerate(whole_words):
-        st.write(f"**Word {index}**:", item)
-    putMarkdown()
+    # st.write(f"## Word by Word:")
+    # for index, item in enumerate(whole_words):
+    #     st.write(f"**Word {index}**:", item)
+    # putMarkdown()
 
-    st.write(f"Successful! Passed Time: {elapsed_time:.2f} seconds")
+    # st.write(f"Successful! Passed Time: {elapsed_time:.2f} seconds")
 
-    # Stop processing at "TC KIMLIK NO"
-    stop_index = next((i for i, line in enumerate(per_line_words) if "TC KIMLIK NO" in " ".join(line)), None)
-    if stop_index is not None:
-        per_line_words = per_line_words[:stop_index]
-
-    # Remove the first seven common headers (1-based index means remove 0-6 in 0-based)
-    # per_line_words = per_line_words[7:] if len(per_line_words) > 7 else per_line_words
-
-    # --------- SUPER OCR Section ---------
     st.write(f"## 🔥 Super OCR 🔥")
 
+    line_by_line = []
+    for lineWords in per_line_words:
+        line_by_line.append(" ".join(lineWords).strip())  # Convert word arrays into full line strings
+
+
+    # Stop processing at "TC KIMLIK NO"
+    stop_index = next((i for i, line in enumerate(line_by_line) if "TC KIMLIK NO" in line), None)
+    if stop_index is not None:
+        line_by_line = line_by_line[:stop_index]  # Remove everything after TC KIMLIK NO
+
+    # Define a more aggressive cleaning function
     def clean_text(text):
-        """Removes common unwanted words from extracted text."""
-        unwanted_words = {"Gelir idaresi", "VERGI LEVHASI", "Bagkanlign", "MUKELLEFIN",
-                          "VERGI", "ADI SOYADI", "DAIRESI", "NO", "TC KIMLIK NO", "TICARET ONVANI", "VERGI KIMLIK", "ADI SOYADI"}
-        return " ".join(word for word in text.split() if word not in unwanted_words).strip()
+        """Removes unwanted words & ensures no partial unwanted words remain."""
+        unwanted_words = {
+            "Gelir idaresi", "VERGI LEVHASI", "Bagkanlign", "MUKELLEFIN",
+            "VERGI", "ADI SOYADI", "DAIRESI", "NO", "TC KIMLIK NO",
+            "TICARET ONVANI", "VERGI KIMLIK"
+        }
+        
+        # Remove individual words
+        cleaned_words = [word for word in text.split() if word.upper() not in unwanted_words]
+        return " ".join(cleaned_words).strip()
 
-    def extract_lines(indices):
-        """Extracts and cleans text from given line indices, adjusted for 0-based indexing."""
-        return clean_text(" ".join(" ".join(per_line_words[i]) for i in indices if i < len(per_line_words)))
+    # Extract key fields
+    vergi_dairesi = " ".join(clean_text(line_by_line[i]) for i in [5, 6, 7] if i < len(line_by_line))
+    ticari_unvan = " ".join(clean_text(line_by_line[i]) for i in [8, 9, 10] if i < len(line_by_line))
+    vergi_kimlik_no = " ".join(clean_text(line_by_line[i]) for i in [11, 12, 13] if i < len(line_by_line))
 
-    # **Corrected Indexes (Decreased by 1 to match 0-based index)**
-    vergi_dairesi = extract_lines([5, 6, 7])  # Corrected from [6, 7, 8]
-    ticari_unvan = extract_lines([8, 9, 10])  # Corrected from [9, 10, 11]
-    vergi_kimlik_no = extract_lines([11, 12, 13])  # Corrected from [12, 13, 14]
+    # Ensure Ticari Ünvan does not contain "TICARET ONVANI" or "VERGI KIMLIK"
+    ticari_unvan = ticari_unvan.replace("TICARET ONVANI", "").replace("VERGI KIMLIK", "").strip()
 
-    # Ensure Ticari Ünvan isn't polluted with unwanted words
-    ticari_unvan_filtered = [" ".join(line) for i, line in enumerate(per_line_words) if 8 <= i <= 10 and any(
-        word.upper() not in {"VERGI", "NO", "KIMLIK"} for word in line)]
-    ticari_unvan = " ".join(ticari_unvan_filtered).strip()
+    if "SIRKETI" in ticari_unvan:
+        words = ticari_unvan.split()
+        index = words.index("SIRKETI")  # Find "SIRKETI"
+        ticari_unvan = " ".join(words[:index + 1])  # Keep only words up to "SIRKETI"
 
-    # Remove non-numeric characters from Vergi Kimlik No and validate
+    # Ensure Vergi Dairesi does not contain "ADI SOYADI"
+    vergi_dairesi = vergi_dairesi.replace("ADI SOYADI", "").strip()
+
+    # Ensure Vergi Kimlik No only contains numbers
+    import re
     def extract_valid_number(text):
-        import re
-        cleaned = re.sub(r'\D', '', text)  # Remove all non-numeric characters
+        cleaned = re.sub(r'\D', '', text)
         return cleaned if cleaned.isdigit() else ""
 
     vergi_kimlik_no = extract_valid_number(vergi_kimlik_no)
 
+    # Display Results
     st.write(f"### 📌 Ticari Ünvan: {ticari_unvan or 'Not Found'}")
     st.write(f"### 📌 Vergi Kimlik No: {vergi_kimlik_no or 'Not Found'}")
     st.write(f"### 📌 Vergi Dairesi: {vergi_dairesi or 'Not Found'}")
 
     putMarkdown()
+
+
+
 
 
 def main():
