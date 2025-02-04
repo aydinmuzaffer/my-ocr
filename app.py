@@ -1,180 +1,118 @@
 import json
 import time
 import base64
-import PyPDF2
 import warnings
-from threading import Timer
-
-import matplotlib.pyplot as plt
-import numpy as np
+import re
 import streamlit as st
-from doctr.io import DocumentFile
-from doctr.models import ocr_predictor
+import easyocr
+import re
 
 warnings.filterwarnings("ignore")
 
-st.title("Image to Text App")
+st.title("📄 Image to Text App (EasyOCR)")
 
+# Initialize EasyOCR reader (supports Turkish)
+@st.cache_resource
+def load_ocr_model():
+    return easyocr.Reader(["tr"])  # Turkish language support
+
+reader = load_ocr_model()
 
 def putMarkdown():
-    svg_code = """<svg width="100%" height="5"><line x1="0" y1="5" x2="100%" y2="5" stroke="black" stroke-width="1"/></svg>"""
-    # st.write(svg_code, unsafe_allow_html=True)
     st.markdown("<hr>", unsafe_allow_html=True)
 
-
 def get_download_button(data, button_text, filename):
-    # JSON verisini dosyaya yaz
     json_str = json.dumps(data, indent=4)
     b64 = base64.b64encode(json_str.encode()).decode()
     href = f'<a href="data:application/json;charset=utf-8;base64,{b64}" download="{filename}">{button_text}</a>'
     return href
 
+def ocr(image):
+    """Extract text from an image using EasyOCR"""
+    result = reader.readtext(image, detail=0)  # Get text only, ignore bounding boxes
+    return [text for text in result]  # Convert all text to uppercase for better matching
 
-def ocr(item):
-    model = ocr_predictor("db_resnet50", "crnn_vgg16_bn", pretrained=True)
-    result = model(item)
-    json_output = result.export()
-    return result, json_output
+import re
 
+def extract_fields(text_list):
+    """Extract Ticari Ünvan, Vergi Kimlik No, and Vergi Dairesi dynamically using indexes."""
+    
+    # Convert list to uppercase string for easy searching
+    full_text = " ".join(text_list).upper()
 
-def display(result, json_output, img):
-    st.write("#### Downoad Json output")
-    st.write("*⬇*" * 9)
+    # Drop everything after "TC KİMLİK NO"
+    if "TC KİMLİK NO" in text_list:
+        stop_index = text_list.index("TC KİMLİK NO")
+        text_list = text_list[:stop_index]
 
-    # # Button of Download JSON
-    # download_button_str = get_download_button(json_output, "DOWNLOAD", "data.json")
-    # st.markdown(download_button_str, unsafe_allow_html=True)
-    # putMarkdown()
+    # Define unwanted words
+    unwanted_words = {
+        "GELİR İDARESİ" "GELIR IDAROSI", "VERGİ LEVHASI", "VERGI LEVHASI" , "BAŞKANLIĞI", "MÜKELLEFİN", "MÜKELLEFIN",
+        "ADI SOYADI", "VERGİ", "VERGI", "TICARET ÜNVANI", "NO", "VERGI KIMLIK", "DAİRESİ", "TİCARET ÜNVANI",
+        "VERGİ KİMLİK", "TC KİMLİK NO", "TC KİMLIK NO", "İŞ YERİ ADRESİ"
+    }
 
-    # # Show the result image
-    # st.image(img, caption="Original image")
-    # putMarkdown()
+    # Find index positions of key fields
+    ticaret_index = next((i for i, word in enumerate(text_list) if "TİCARET ÜNVANI" in word or "TICARET ÜNVANI" in word), None)
+    vergi_dairesi_index = next((i for i, word in enumerate(text_list) if "VERGİ DAİRESİ" in word or "VERGI" in word), None)
+    vergi_kimlik_no_index = next((i for i, word in enumerate(text_list) if "VERGİ KİMLİK" in word or "VERGI KIMLIK" in word), None)
 
-    # synthetic_pages = result.synthesize()
-    # st.image(synthetic_pages, caption="Result of image")
-
-    # elapsed_time = time.time() - start_time
-    # putMarkdown()
-
-    # Show the results
-    whole_words = []
-    per_line_words = []
-    for block in json_output["pages"][0]["blocks"]:
-        for line in block["lines"]:
-            line_words = []
-            for word in line["words"]:
-                whole_words.append(word["value"])
-                line_words.append(word["value"])
-            per_line_words.append(line_words)
-
-
-    # Put the whole Words
-    # st.write(f"## Whole Words:")
-    # st.write(word + " " for word in whole_words)
-    # putMarkdown()
-
-    # Put the Words line by line
-    # st.write(f"## Line by Line:")
-    # for lineWords in per_line_words:
-    #     st.write(word + " " for word in lineWords)
-    # putMarkdown()
-
-    # Put the Words Word by Word
-    # st.write(f"## Word by Word:")
-    # for index, item in enumerate(whole_words):
-    #     st.write(f"**Word {index}**:", item)
-    # putMarkdown()
-
-    # st.write(f"Successful! Passed Time: {elapsed_time:.2f} seconds")
-
-    st.write(f"## 🔥 Super OCR 🔥")
-
-    line_by_line = []
-    for lineWords in per_line_words:
-        line_by_line.append(" ".join(lineWords).strip())  # Convert word arrays into full line strings
-
-
-    # Stop processing at "TC KIMLIK NO"
-    stop_index = next((i for i, line in enumerate(line_by_line) if "TC KIMLIK NO" in line), None)
-    if stop_index is not None:
-        line_by_line = line_by_line[:stop_index]  # Remove everything after TC KIMLIK NO
-
-    # Define a more aggressive cleaning function
-    def clean_text(text):
-        """Removes unwanted words & ensures no partial unwanted words remain."""
-        unwanted_words = {
-            "Gelir idaresi", "VERGI LEVHASI", "Bagkanlign", "MUKELLEFIN",
-            "VERGI", "ADI SOYADI", "DAIRESI", "NO", "TC KIMLIK NO",
-            "TICARET ONVANI", "VERGI KIMLIK", "TICARET UNVANI"
-        }
+    # Extract possible values
+    ticari_unvan = text_list[ticaret_index + 1] if ticaret_index is not None and ticaret_index + 1 < len(text_list) else "Bilinmiyor"
+    vergi_dairesi = text_list[vergi_dairesi_index + 1] if vergi_dairesi_index is not None and vergi_dairesi_index + 1 < len(text_list) else "Bilinmiyor"
+    
+    # Handle Vergi Kimlik No: Check if it's a valid number
+    if vergi_kimlik_no_index is not None and vergi_kimlik_no_index + 1 < len(text_list):
+        possible_vergi_no = text_list[vergi_kimlik_no_index + 1]
+        possible_vergi_no = re.sub(r"\D", "", possible_vergi_no)  # Remove spaces and non-numeric characters
         
-        # Remove individual words
-        cleaned_words = [word for word in text.split() if word.upper() not in unwanted_words]
-        return " ".join(cleaned_words).strip()
+        if possible_vergi_no.isdigit() and 10 <= len(possible_vergi_no) <= 11:  # Ensure it's a 10-11 digit number
+            vergi_kimlik_no = possible_vergi_no
+        else:
+            vergi_kimlik_no = "Bilinmiyor"
+    else:
+        vergi_kimlik_no = "Bilinmiyor"
 
-    # Extract key fields
-    vergi_dairesi = " ".join(clean_text(line_by_line[i]) for i in [5, 6, 7] if i < len(line_by_line))
-    ticari_unvan = " ".join(clean_text(line_by_line[i]) for i in [8, 9, 10] if i < len(line_by_line))
-    vergi_kimlik_no = " ".join(clean_text(line_by_line[i]) for i in [11, 12, 13] if i < len(line_by_line))
+    return ticari_unvan, vergi_kimlik_no, vergi_dairesi
 
-    # Ensure Ticari Ünvan does not contain "TICARET ONVANI" or "VERGI KIMLIK"
-    ticari_unvan = ticari_unvan.replace("TICARET ONVANI", "").replace("TICARET UNVANI", "").replace("VERGI KIMLIK", "").strip()
 
-    if "SIRKETI" in ticari_unvan:
-        words = ticari_unvan.split()
-        index = words.index("SIRKETI")  # Find "SIRKETI"
-        ticari_unvan = " ".join(words[:index + 1])  # Keep only words up to "SIRKETI"
+def display(text_list):
+    """Display extracted and cleaned OCR results"""
+    st.write("## 🔥 EasyOCR Results 🔥")
+    
+    ticari_unvan, vergi_kimlik_no, vergi_dairesi = extract_fields(text_list)
 
-    # Ensure Vergi Dairesi does not contain "ADI SOYADI"
-    vergi_dairesi = vergi_dairesi.replace("ADI SOYADI", "").strip()
-
-    # Ensure Vergi Kimlik No only contains numbers
-    import re
-    def extract_valid_number(text):
-        cleaned = re.sub(r'\D', '', text)
-        return cleaned if cleaned.isdigit() else ""
-
-    vergi_kimlik_no = extract_valid_number(vergi_kimlik_no)
-
-    # Display Results
-    st.write(f"### 📌 Ticari Ünvan: {ticari_unvan or 'Not Found'}")
-    st.write(f"### 📌 Vergi Kimlik No: {vergi_kimlik_no or 'Not Found'}")
-    st.write(f"### 📌 Vergi Dairesi: {vergi_dairesi or 'Not Found'}")
+    # Display results
+    st.write(f"### 📌 Ticari Ünvan: {ticari_unvan}")
+    st.write(f"### 📌 Vergi Kimlik No: {vergi_kimlik_no}")
+    st.write(f"### 📌 Vergi Dairesi: {vergi_dairesi}")
 
     putMarkdown()
 
 def main():
-    global start_time, seconds_elapsed, stop_time
-
-    # Uploading an image file
-    uploaded_file = st.file_uploader(
-        "Choose a File", type=["jpg", "jpeg", "png", "pdf"]
-    )
-
-    st.write("#### or Put an URL")
-    url = st.text_input("Please type an URL:")
-
-    if st.button("Show The URL"):
-        st.write("Typed URL:", url)
+    # File uploader
+    uploaded_file = st.file_uploader("Choose a File", type=["jpg", "jpeg", "png", "pdf"])
+    
+    if uploaded_file is not None:
         start_time = time.time()
+        
+        # Read image
+        image = uploaded_file.read()
+        text_list = ocr(image)  # Extract text
+        
+        st.write(f"### 📌 Raw OCR Text: {text_list}")  # Show raw extracted text
+        
+        # Extract Ticari Ünvan, Vergi Kimlik No, and Vergi Dairesi
+        ticari_unvan, vergi_kimlik_no, vergi_dairesi = extract_fields(text_list)
 
-        single_img_doc = DocumentFile.from_url(url)
-        result, json_output = ocr(single_img_doc)
-        display(result, json_output)
+        # Display extracted data
+        st.write("## 🔥 EasyOCR Extracted Data 🔥")
+        st.write(f"### 📌 Ticari Ünvan: {ticari_unvan}")
+        st.write(f"### 📌 Vergi Kimlik No: {vergi_kimlik_no}")
+        st.write(f"### 📌 Vergi Dairesi: {vergi_dairesi}")
 
-    elif uploaded_file is not None:
-        # start timer
-        start_time = time.time()
-
-        if uploaded_file.type == "application/pdf":
-            image = uploaded_file.read()
-            single_img_doc = DocumentFile.from_pdf(image)
-        else:
-            image = uploaded_file.read()
-            single_img_doc = DocumentFile.from_images(image)
-
-        result, json_output = ocr(single_img_doc)
-        display(result, json_output, image)
+        elapsed_time = time.time() - start_time
+        st.write(f"### ⏱️ OCR Completed in {elapsed_time:.2f} seconds")
 
 
 if __name__ == "__main__":
