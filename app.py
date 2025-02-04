@@ -67,6 +67,7 @@ def display(result, json_output, img):
                 line_words.append(word["value"])
             per_line_words.append(line_words)
 
+
     # Put the whole Words
     # st.write(f"## Whole Words:")
     # st.write(word + " " for word in whole_words)
@@ -104,7 +105,7 @@ def display(result, json_output, img):
         unwanted_words = {
             "Gelir idaresi", "VERGI LEVHASI", "Bagkanlign", "MUKELLEFIN",
             "VERGI", "ADI SOYADI", "DAIRESI", "NO", "TC KIMLIK NO",
-            "TICARET ONVANI", "VERGI KIMLIK"
+            "TICARET ONVANI", "VERGI KIMLIK", "TICARET UNVANI"
         }
         
         # Remove individual words
@@ -117,7 +118,7 @@ def display(result, json_output, img):
     vergi_kimlik_no = " ".join(clean_text(line_by_line[i]) for i in [11, 12, 13] if i < len(line_by_line))
 
     # Ensure Ticari Ünvan does not contain "TICARET ONVANI" or "VERGI KIMLIK"
-    ticari_unvan = ticari_unvan.replace("TICARET ONVANI", "").replace("VERGI KIMLIK", "").strip()
+    ticari_unvan = ticari_unvan.replace("TICARET ONVANI", "").replace("TICARET UNVANI", "").replace("VERGI KIMLIK", "").strip()
 
     if "SIRKETI" in ticari_unvan:
         words = ticari_unvan.split()
@@ -141,10 +142,6 @@ def display(result, json_output, img):
     st.write(f"### 📌 Vergi Dairesi: {vergi_dairesi or 'Not Found'}")
 
     putMarkdown()
-
-
-
-
 
 def main():
     global start_time, seconds_elapsed, stop_time
